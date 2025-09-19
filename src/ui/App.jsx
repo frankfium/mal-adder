@@ -38,7 +38,8 @@ export default function App() {
     const res = await fetch('/add-shows', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shows })
+      body: JSON.stringify({ shows }),
+      credentials: 'include'
     })
     const data = await res.json()
     setOutput(JSON.stringify(data, null, 2))

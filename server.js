@@ -283,7 +283,9 @@ async function refreshToken(req) {
 app.post("/add-shows", async (req, res) => {
     let accessToken = (req.session && req.session.tokens && req.session.tokens.access_token) || ENV_ACCESS_TOKEN || "";
     if (!accessToken) {
-        return res.status(401).json({ error: "Not logged in. Set MAL_ACCESS_TOKEN in .env or use /login." });
+        return res.status(401).json({
+            error: "Authentication required. Log in with MAL before adding shows."
+        });
     }
 
     const { shows } = req.body; // array of show titles
