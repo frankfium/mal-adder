@@ -282,84 +282,95 @@ async function refreshToken(req) {
     return response.data.access_token;
 }
 
-// Step 3: Add shows
-app.post("/add-shows", async (req, res) => {
-    let accessToken = (req.session && req.session.tokens && req.session.tokens.access_token) || ENV_ACCESS_TOKEN || "";
-    if (!accessToken) {
-        return res.status(401).json({
-            error: "Authentication required. Log in with MAL before adding shows."
-        });
+// Step 3a: Preview shows before updating
+app.post("/preview-shows", async (req, res) => {
+    try {
+        const { shows = [] } = req.body || {};
+        let accessToken = await ensureAccessToken(req);
+        const preview = await buildPreviewSet(shows, accessToken, req);
+        res.json({ results: preview });
+    } catch (err) {
+        if (err.status === 401 || err.message === 'AUTH_REQUIRED') {
+            return res.status(401).json({ error: "Authentication required. Log in with MAL before previewing shows." });
+        }
+        console.error('/preview-shows error:', err.response?.data || err.message);
+        res.status(500).json({ error: 'Failed to preview shows.' });
     }
+});
 
-    const { shows } = req.body; // array of show titles
-    const results = [];
+// Step 3b: Add shows
+app.post("/add-shows", async (req, res) => {
+    try {
+        const { shows = [], matches = [] } = req.body || {};
+        let accessToken = await ensureAccessToken(req);
 
-    for (const showInput of shows) {
-        try {
-            // Parse episode count from format "Anime Name (5)" or just "Anime Name"
-            const episodeMatch = showInput.match(/^(.+?)\s*\((\d+)\)\s*$/);
-            const title = episodeMatch ? episodeMatch[1].trim() : showInput.trim();
-            const episodeCount = episodeMatch ? parseInt(episodeMatch[2]) : null;
+        let confirmations = matches;
+        if (!Array.isArray(confirmations) || confirmations.length === 0) {
+            if (!Array.isArray(shows) || shows.length === 0) {
+                return res.json({ results: [] });
+            }
+            confirmations = await buildPreviewSet(shows, accessToken, req);
+        }
 
-            const doWork = async () => {
-                const searchRes = await axios.get(`${API_BASE}/anime`, {
-                    params: { q: title, limit: 1, fields: "id,title,num_episodes" },
-                    headers: { Authorization: `Bearer ${accessToken}` }
+        const results = [];
+        for (const item of confirmations) {
+            if (item.error) {
+                results.push({
+                    title: item.inputTitle || item.rawInput,
+                    status: 'error',
+                    error: item.error
                 });
-                const anime = searchRes.data.data[0].node;
-                
-                // Determine status and episode count
-                const totalEpisodes = anime.num_episodes || 0;
-                const watchedEpisodes = episodeCount !== null ? episodeCount : totalEpisodes;
-                const status = episodeCount !== null && episodeCount < totalEpisodes ? "watching" : "completed";
-                
-                await axios.patch(`${API_BASE}/anime/${anime.id}/my_list_status`,
+                continue;
+            }
+
+            const applyUpdate = async (tokenOverride) => {
+                const tokenToUse = tokenOverride || accessToken;
+                await axios.patch(`${API_BASE}/anime/${item.animeId}/my_list_status`,
                     new URLSearchParams({
-                        status: status,
-                        num_watched_episodes: watchedEpisodes
+                        status: item.plannedStatus,
+                        num_watched_episodes: item.plannedEpisodes
                     }),
-                    { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/x-www-form-urlencoded" } }
+                    {
+                        headers: {
+                            Authorization: `Bearer ${tokenToUse}`,
+                            "Content-Type": "application/x-www-form-urlencoded"
+                        }
+                    }
                 );
-                
-                return { title, status, episodes: watchedEpisodes, total: totalEpisodes };
+
+                return {
+                    title: item.matchedTitle || item.inputTitle || item.rawInput,
+                    status: item.plannedStatus,
+                    episodes: item.plannedEpisodes,
+                    total: item.totalEpisodes || null
+                };
             };
 
             try {
-                const result = await doWork();
-                results.push({ 
-                    title: result.title, 
-                    status: result.status, 
-                    episodes: result.episodes,
-                    total: result.total 
-                });
+                const success = await handleAuthError(req, (tokenOverride) => applyUpdate(tokenOverride));
+                accessToken = req.session?.tokens?.access_token || accessToken;
+                results.push(success);
             } catch (err) {
-                if (err.response?.status === 401) {
-                    try {
-                        accessToken = await refreshToken(req);
-                        const result = await doWork();
-                        results.push({ 
-                            title: result.title, 
-                            status: result.status, 
-                            episodes: result.episodes,
-                            total: result.total 
-                        });
-                    } catch (innerErr) {
-                        console.error(innerErr.response?.data || innerErr.message);
-                        results.push({ title, status: "error", error: innerErr.message });
-                    }
-                } else {
-                    console.error(err.response?.data || err.message);
-                    results.push({ title, status: "error", error: err.message });
-                }
+                console.error('/add-shows update error:', err.response?.data || err.message);
+                const message = err.response?.data?.message || err.response?.data?.error || err.message;
+                results.push({
+                    title: item.matchedTitle || item.inputTitle || item.rawInput,
+                    status: 'error',
+                    error: message
+                });
             }
-        } catch (outer) {
-            console.error(outer.response?.data || outer.message);
-            results.push({ title, status: "error", error: outer.message });
-        }
-        await new Promise(r => setTimeout(r, 400)); // rate limit
-    }
 
-    res.json({ results });
+            await sleep(350);
+        }
+
+        res.json({ results });
+    } catch (err) {
+        if (err.status === 401 || err.message === 'AUTH_REQUIRED') {
+            return res.status(401).json({ error: "Authentication required. Log in with MAL before adding shows." });
+        }
+        console.error('/add-shows error:', err.response?.data || err.message);
+        res.status(500).json({ error: 'Failed to add shows.' });
+    }
 });
 
 if (!CLIENT_ID || CLIENT_ID === "YOUR_CLIENT_ID") {
@@ -368,3 +379,106 @@ if (!CLIENT_ID || CLIENT_ID === "YOUR_CLIENT_ID") {
 }
 
 app.listen(3000, () => console.log("Server running at http://localhost:3000"));
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function parseShowInput(raw) {
+  const episodeMatch = raw.match(/^(.+?)\s*\((\d+)\)\s*$/);
+  const title = episodeMatch ? episodeMatch[1].trim() : raw.trim();
+  const episodeCount = episodeMatch ? parseInt(episodeMatch[2], 10) : null;
+  return { rawInput: raw, title, episodeCount };
+}
+
+async function fetchAnimeMatch(title, accessToken) {
+  const searchRes = await axios.get(`${API_BASE}/anime`, {
+    params: { q: title, limit: 1, fields: "id,title,num_episodes" },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  const anime = searchRes.data?.data?.[0]?.node;
+  if (!anime) {
+    const err = new Error(`No match found for "${title}"`);
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  return anime;
+}
+
+function buildPlannedStatus(episodeCount, totalEpisodes) {
+  if (episodeCount !== null) {
+    return {
+      watchedEpisodes: episodeCount,
+      status: totalEpisodes > 0 && episodeCount < totalEpisodes ? 'watching' : 'completed'
+    };
+  }
+  return {
+    watchedEpisodes: totalEpisodes || 0,
+    status: 'completed'
+  };
+}
+
+async function ensureAccessToken(req) {
+  let accessToken = (req.session && req.session.tokens && req.session.tokens.access_token) || ENV_ACCESS_TOKEN || "";
+  if (!accessToken) {
+    const err = new Error('AUTH_REQUIRED');
+    err.status = 401;
+    throw err;
+  }
+  return accessToken;
+}
+
+async function handleAuthError(req, handler) {
+  try {
+    return await handler();
+  } catch (err) {
+    if (err.response?.status === 401) {
+      const refreshed = await refreshToken(req);
+      return handler(refreshed);
+    }
+    throw err;
+  }
+}
+
+async function buildPreviewSet(shows, initialToken, req) {
+  let accessToken = initialToken;
+  const preview = [];
+  for (const raw of shows) {
+    const parsed = parseShowInput(raw);
+    if (!parsed.title) {
+      preview.push({ rawInput: raw, inputTitle: raw, error: 'Title is empty' });
+      continue;
+    }
+
+    const run = async (tokenOverride) => {
+      const tokenToUse = tokenOverride || accessToken;
+      const anime = await fetchAnimeMatch(parsed.title, tokenToUse);
+      const totalEpisodes = anime.num_episodes || 0;
+      const { watchedEpisodes, status } = buildPlannedStatus(parsed.episodeCount, totalEpisodes);
+      return {
+        rawInput: raw,
+        inputTitle: parsed.title,
+        episodeCount: parsed.episodeCount,
+        matchedTitle: anime.title,
+        animeId: anime.id,
+        totalEpisodes,
+        plannedEpisodes: watchedEpisodes,
+        plannedStatus: status
+      };
+    };
+
+    try {
+      const previewEntry = await handleAuthError(req, (tokenOverride) => run(tokenOverride));
+      accessToken = req.session?.tokens?.access_token || accessToken;
+      preview.push(previewEntry);
+    } catch (err) {
+      const message = err.response?.data?.message || err.response?.data?.error || err.message;
+      preview.push({
+        rawInput: raw,
+        inputTitle: parsed.title,
+        episodeCount: parsed.episodeCount,
+        error: message
+      });
+    }
+
+    await sleep(350);
+  }
+  return preview;
+}

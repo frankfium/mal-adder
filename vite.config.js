@@ -8,6 +8,8 @@ export default defineConfig({
       '/login': 'http://localhost:3000',
       '/callback': 'http://localhost:3000',
       '/me': 'http://localhost:3000',
+      '/logout': 'http://localhost:3000',
+      '/preview-shows': 'http://localhost:3000',
       '/add-shows': 'http://localhost:3000',
       '/rmtj.jpg': 'http://localhost:3000'
     }

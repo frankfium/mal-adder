@@ -7,7 +7,9 @@ function useIsHttpOrigin() {
 export default function App() {
   const isHttp = useIsHttpOrigin()
   const [showsText, setShowsText] = useState('')
-  const [output, setOutput] = useState('')
+  const [previewResults, setPreviewResults] = useState([])
+  const [finalResults, setFinalResults] = useState([])
+  const [isLoading, setIsLoading] = useState(false)
   const [me, setMe] = useState({ loading: true, loggedIn: false, name: '' })
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
   const [activeTab, setActiveTab] = useState('home')
@@ -29,20 +31,78 @@ export default function App() {
     }
   }
 
-  const onSubmit = async () => {
+  const parseShows = () => showsText.split('\n').map(s => s.trim()).filter(Boolean)
+
+  const onPreview = async () => {
     if (!isHttp) {
       alert('Please open http://localhost:3000/ in your browser (do not open this file directly).')
       return
     }
-    const shows = showsText.split('\n').map(s => s.trim()).filter(Boolean)
-    const res = await fetch('/add-shows', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ shows }),
-      credentials: 'include'
-    })
-    const data = await res.json()
-    setOutput(JSON.stringify(data, null, 2))
+    const shows = parseShows()
+    if (!shows.length) {
+      showToast('Add at least one show to preview', 'error')
+      return
+    }
+    setIsLoading(true)
+    setPreviewResults([])
+    setFinalResults([])
+    try {
+      const res = await fetch('/preview-shows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shows }),
+        credentials: 'include'
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        showToast(data?.error || 'Failed to preview shows', 'error')
+        return
+      }
+      setPreviewResults(Array.isArray(data.results) ? data.results : [])
+      if (!data.results?.length) {
+        showToast('No matches found. Check your titles.', 'error')
+      }
+    } catch (err) {
+      showToast('Unexpected error while previewing shows', 'error')
+      console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const onConfirm = async () => {
+    const shows = parseShows()
+    if (!shows.length) {
+      showToast('Nothing to update yet', 'error')
+      return
+    }
+    const matches = previewResults.filter(item => !item.error)
+    if (!matches.length) {
+      showToast('No valid matches to update', 'error')
+      return
+    }
+    setIsLoading(true)
+    try {
+      const res = await fetch('/add-shows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matches }),
+        credentials: 'include'
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        showToast(data?.error || 'Failed to add shows', 'error')
+        return
+      }
+      setFinalResults(Array.isArray(data.results) ? data.results : [])
+      const anyErrors = data.results?.some(item => item.status === 'error')
+      showToast(anyErrors ? 'Finished with some errors' : 'Successfully updated your MAL list')
+    } catch (err) {
+      showToast('Unexpected error while adding shows', 'error')
+      console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const showToast = (message, type = 'success') => {
@@ -155,13 +215,41 @@ export default function App() {
             <textarea id="shows" value={showsText} onChange={e => setShowsText(e.target.value)} />
           </div>
           <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
-            <button className="btn" onClick={onSubmit}>Update List</button>
-            <button className="btn btn-secondary" type="button" onClick={() => { setShowsText(''); setOutput('') }}>Clear</button>
+            <button className="btn" onClick={onPreview} disabled={isLoading}>
+              {isLoading ? 'Working...' : (previewResults.length ? 'Refresh Preview' : 'Preview Matches')}
+            </button>
+            <button
+              className="btn"
+              disabled={!previewResults.length || isLoading}
+              style={{ opacity: !previewResults.length ? 0.6 : 1 }}
+              onClick={onConfirm}
+            >
+              Confirm & Update
+            </button>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={() => {
+                setShowsText('')
+                setPreviewResults([])
+                setFinalResults([])
+              }}
+            >
+              Clear
+            </button>
           </div>
         </div>
         <div className="card">
           <h3>Result</h3>
-          <pre>{output}</pre>
+          <div className="results-panel">
+            {finalResults.length ? (
+              <ResultsList items={finalResults} />
+            ) : previewResults.length ? (
+              <PreviewList items={previewResults} />
+            ) : (
+              <div className="muted">Preview matches to review them here.</div>
+            )}
+          </div>
         </div>
       </div>
     </>
@@ -310,6 +398,77 @@ Naruto`}</pre>
         </div>
       )}
     </>
+  )
+}
+
+function PreviewList({ items }) {
+  const ready = items.filter(item => !item.error)
+  const errors = items.filter(item => item.error)
+
+  return (
+    <div className="result-section">
+      {ready.length > 0 && (
+        <>
+          <div className="result-heading">Review matches before updating:</div>
+          <ul className="result-list">
+            {ready.map(item => (
+              <li key={`${item.animeId}-${item.rawInput}`} className="result-item">
+                <div>
+                  <div className="result-title">{item.matchedTitle}</div>
+                  <div className="result-sub">Input: {item.rawInput}</div>
+                </div>
+                <div className="result-meta">
+                  <span>{item.plannedStatus}</span>
+                  {item.plannedEpisodes !== null && (
+                    <span>{item.plannedEpisodes}{item.totalEpisodes ? ` / ${item.totalEpisodes}` : ''} eps</span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {errors.length > 0 && (
+        <>
+          <div className="result-heading" style={{ marginTop: ready.length ? 16 : 0 }}>Issues to fix:</div>
+          <ul className="result-list error">
+            {errors.map(item => (
+              <li key={`${item.rawInput}-error`} className="result-item error">
+                <div>
+                  <div className="result-title">{item.rawInput || item.inputTitle}</div>
+                  <div className="result-sub">{item.error}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  )
+}
+
+function ResultsList({ items }) {
+  if (!items.length) return null
+  return (
+    <div className="result-section">
+      <ul className="result-list">
+        {items.map((item, idx) => (
+          <li key={`${item.title}-${idx}`} className={`result-item ${item.status}`}>
+            <div>
+              <div className="result-title">{item.title}</div>
+              {item.error && <div className="result-sub">{item.error}</div>}
+            </div>
+            <div className="result-meta">
+              <span className="badge">{item.status}</span>
+              {item.episodes !== null && item.status !== 'error' && (
+                <span>{item.episodes}{item.total ? ` / ${item.total}` : ''} eps</span>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
