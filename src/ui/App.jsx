@@ -244,6 +244,14 @@ Naruto`}</pre>
       <div className="container">
         <div className="header">
           <div className="title">MAL List Updater</div>
+          <a
+            className="support-link"
+            href="https://ko-fi.com/rmtj_"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Buy me a coffee
+          </a>
           <div className="toolbar">
             {me.loggedIn ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

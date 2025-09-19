@@ -65,11 +65,30 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
+  gap: 16px;
 }
 .title {
   font-size: 22px;
   font-weight: 700;
   letter-spacing: 0.2px;
+}
+
+.support-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(79,156,255,0.12);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.support-link:hover {
+  background: rgba(79,156,255,0.2);
+  color: var(--text);
+}
+.support-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 @media (max-width: 768px) {
@@ -83,6 +102,10 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+  .support-link {
+    align-self: center;
+    padding: 8px 18px;
   }
   .title::before {
     content: "";
