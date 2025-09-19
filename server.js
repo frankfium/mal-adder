@@ -35,6 +35,18 @@ const TOKEN_URL = "https://myanimelist.net/v1/oauth2/token";
 const API_BASE = "https://api.myanimelist.net/v2";
 
 const app = express();
+
+// Core middleware before routes so sessions work everywhere
+app.use(bodyParser.json());
+app.use(session({
+  name: "session",
+  secret: process.env.SESSION_SECRET || "supersecret",
+  maxAge: 24 * 60 * 60 * 1000,
+  sameSite: IS_PRODUCTION ? "none" : "lax",
+  secure: IS_PRODUCTION,
+  httpOnly: false
+}));
+
 // Serve static assets from ./public
 app.use(express.static(path.join(__dirname, "public")));
 // Serve built frontend if available (./dist from Vite build)
@@ -106,17 +118,6 @@ app.post("/logout", (req, res) => {
   delete req.session.tokens;
   res.json({ success: true });
 });
-app.use(bodyParser.json());
-app.use(session({
-  name: "session",
-  secret: process.env.SESSION_SECRET || "supersecret",
-  maxAge: 24 * 60 * 60 * 1000,
-  // ensure cookies work on http://localhost during dev
-  sameSite: IS_PRODUCTION ? "none" : "lax",
-  secure: IS_PRODUCTION,
-  // Allow cookies to work across popup windows
-  httpOnly: false
-}));
 
 // PKCE helpers
 function base64url(buf) {
@@ -281,7 +282,9 @@ async function refreshToken(req) {
 // Step 3: Add shows
 app.post("/add-shows", async (req, res) => {
     let accessToken = (req.session && req.session.tokens && req.session.tokens.access_token) || ENV_ACCESS_TOKEN || "";
-    if (!accessToken) return res.status(401).send("Not logged in. Set MAL_ACCESS_TOKEN in .env or use /login.");
+    if (!accessToken) {
+        return res.status(401).json({ error: "Not logged in. Set MAL_ACCESS_TOKEN in .env or use /login." });
+    }
 
     const { shows } = req.body; // array of show titles
     const results = [];
