@@ -36,6 +36,9 @@ const API_BASE = "https://api.myanimelist.net/v2";
 
 const app = express();
 
+// Behind Vercel/other proxies we must trust the forwarded proto so secure cookies stick
+app.set('trust proxy', 1);
+
 // Core middleware before routes so sessions work everywhere
 app.use(bodyParser.json());
 app.use(session({
