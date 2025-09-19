@@ -11,10 +11,5 @@
       "src": "/(.*)",
       "dest": "server.js"
     }
-  ],
-  "env": {
-    "MAL_CLIENT_ID": "@mal_client_id",
-    "MAL_CLIENT_SECRET": "@mal_client_secret",
-    "MAL_REDIRECT_URI": "@mal_redirect_uri"
-  }
+  ]
 }
