@@ -10,6 +10,10 @@ export default function App() {
   const [previewResults, setPreviewResults] = useState([])
   const [finalResults, setFinalResults] = useState([])
   const [isLoading, setIsLoading] = useState(false)
+  const [listItems, setListItems] = useState([])
+  const [listLoading, setListLoading] = useState(false)
+  const [listLoaded, setListLoaded] = useState(false)
+  const [listError, setListError] = useState('')
   const [me, setMe] = useState({ loading: true, loggedIn: false, name: '' })
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
   const [activeTab, setActiveTab] = useState('home')
@@ -26,6 +30,9 @@ export default function App() {
       await fetch('/logout', { method: 'POST', credentials: 'include' })
       setMe({ loading: false, loggedIn: false, name: '' })
       showToast('Logged out successfully')
+      setListItems([])
+      setListLoaded(false)
+      setListError('')
     } catch (err) {
       console.error('Logout error:', err)
     }
@@ -102,6 +109,43 @@ export default function App() {
       console.error(err)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const loadList = async ({ notify = false } = {}) => {
+    if (!isHttp) {
+      showToast('Open the app via http://localhost:3000/ to load your list', 'error')
+      return
+    }
+    if (listLoading) return
+    setListLoading(true)
+    setListError('')
+    try {
+      const res = await fetch('/my-list', { credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const message = data?.error || 'Failed to load MAL list'
+        setListError(message)
+        showToast(message, 'error')
+        if (res.status === 401) {
+          setListItems([])
+          setListLoaded(false)
+        }
+        return
+      }
+      const items = Array.isArray(data.results) ? data.results : []
+      setListItems(items)
+      setListLoaded(true)
+      if (notify) {
+        showToast('List refreshed')
+      }
+    } catch (err) {
+      console.error('Failed to load MAL list:', err)
+      const message = 'Unexpected error while loading list'
+      setListError(message)
+      showToast(message, 'error')
+    } finally {
+      setListLoading(false)
     }
   }
 
@@ -193,10 +237,18 @@ export default function App() {
     
     return () => {
       window.removeEventListener('message', onMessage)
-      window.removeEventListener('focus', checkAuth)
-      clearInterval(interval)
+    window.removeEventListener('focus', checkAuth)
+    clearInterval(interval)
+  }
+}, [])
+
+  useEffect(() => {
+    if (activeTab === 'list' && me.loggedIn) {
+      if (!listLoaded && !listLoading) {
+        loadList()
+      }
     }
-  }, [])
+  }, [activeTab, me.loggedIn, listLoaded, listLoading])
 
   const renderHomePage = () => (
     <>
@@ -326,6 +378,37 @@ Naruto`}</pre>
     </div>
   )
 
+  const renderListPage = () => (
+    <div className="card">
+      <div className="list-header">
+        <h3>Your MAL List</h3>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => loadList({ notify: true })}
+            disabled={!me.loggedIn || listLoading}
+          >
+            {listLoading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+      <div className="help" style={{ marginBottom: 12 }}>
+        Snapshot of the shows in your MAL list with current status, progress, and scores.
+      </div>
+      {!me.loggedIn ? (
+        <div className="muted">Log in with MAL to view your personal list.</div>
+      ) : listLoading && !listItems.length ? (
+        <div className="muted">Loading your list...</div>
+      ) : listError ? (
+        <div className="notice" style={{ borderColor: 'rgba(239,68,68,0.4)' }}>{listError}</div>
+      ) : listItems.length ? (
+        <ListGrid items={listItems} />
+      ) : (
+        <div className="muted">No entries found yet. Refresh after adding shows.</div>
+      )}
+    </div>
+  )
+
   return (
     <>
       <img className="side-illustration" src="/rmtj.jpg" alt="" />
@@ -381,15 +464,22 @@ Naruto`}</pre>
           >
             Usage
           </button>
+          <button 
+            className={`nav-tab ${activeTab === 'list' ? 'active' : ''}`}
+            onClick={() => setActiveTab('list')}
+          >
+            List
+          </button>
         </nav>
 
         <div className="page-content">
           {activeTab === 'home' && renderHomePage()}
           {activeTab === 'about' && renderAboutPage()}
           {activeTab === 'usage' && renderUsagePage()}
+          {activeTab === 'list' && renderListPage()}
         </div>
 
-        <div className="footer">Built for MyAnimeList API • Local demo</div>
+        <div className="footer">rmtj mal-adder • V.1.0.0 • MIT License</div>
       </div>
       
       {toast.show && (
@@ -468,6 +558,39 @@ function ResultsList({ items }) {
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+function ListGrid({ items }) {
+  return (
+    <div className="list-grid">
+      {items.map((item) => {
+        const episodesLabel =
+          item.watchedEpisodes !== null && item.totalEpisodes !== null
+            ? `${item.watchedEpisodes} / ${item.totalEpisodes}`
+            : item.watchedEpisodes !== null
+              ? `${item.watchedEpisodes}`
+              : '-'
+        const scoreLabel = item.score !== null && item.score > 0 ? item.score : '-'
+        const statusLabel = (item.status || '-').replace(/_/g, ' ')
+        return (
+          <div key={item.id || `${item.title}-${episodesLabel}`} className="list-card">
+            <div className="list-card-title">{item.title}</div>
+            <div className="list-card-meta">
+              <span className={`badge ${item.status || ''}`}>{statusLabel}</span>
+              <div className="list-card-stat">
+                <span className="label">Episodes</span>
+                <span>{episodesLabel}</span>
+              </div>
+              <div className="list-card-stat">
+                <span className="label">Score</span>
+                <span>{scoreLabel}</span>
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

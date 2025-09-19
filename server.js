@@ -373,12 +373,28 @@ app.post("/add-shows", async (req, res) => {
     }
 });
 
+// Step 4: Fetch user's MAL list snapshot
+app.get("/my-list", async (req, res) => {
+    try {
+        const initialToken = await ensureAccessToken(req);
+        const items = await buildUserListSnapshot(req, initialToken);
+        res.json({ results: items });
+    } catch (err) {
+        if (err.status === 401 || err.message === 'AUTH_REQUIRED') {
+            return res.status(401).json({ error: "Authentication required. Log in with MAL to view your list." });
+        }
+        console.error('/my-list error:', err.response?.data || err.message);
+        res.status(500).json({ error: 'Failed to load MAL list.' });
+    }
+});
+
 if (!CLIENT_ID || CLIENT_ID === "YOUR_CLIENT_ID") {
   console.error("Missing MAL_CLIENT_ID. Set it in .env or env vars before starting the server.");
   process.exit(1);
 }
 
 app.listen(3000, () => console.log("Server running at http://localhost:3000"));
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function parseShowInput(raw) {
@@ -481,4 +497,58 @@ async function buildPreviewSet(shows, initialToken, req) {
     await sleep(350);
   }
   return preview;
+}
+
+async function buildUserListSnapshot(req, initialToken) {
+  let accessToken = initialToken;
+  const collected = [];
+  const maxPages = parseInt(process.env.MAL_LIST_MAX_PAGES || '5', 10);
+  const maxItems = parseInt(process.env.MAL_LIST_MAX_ITEMS || '400', 10);
+  let nextUrl = null;
+  let pagesFetched = 0;
+
+  while (pagesFetched < maxPages && collected.length < maxItems) {
+    const run = async (tokenOverride) => {
+      const tokenToUse = tokenOverride || accessToken;
+      const url = nextUrl || `${API_BASE}/users/@me/animelist`;
+      const config = {
+        headers: { Authorization: `Bearer ${tokenToUse}` }
+      };
+      if (!nextUrl) {
+        config.params = {
+          limit: 100,
+          fields: 'id,title,num_episodes,my_list_status{status,num_episodes_watched,score,updated_at}'
+        };
+      }
+      const response = await axios.get(url, config);
+      return response.data;
+    };
+
+    const data = await handleAuthError(req, (tokenOverride) => run(tokenOverride));
+    accessToken = req.session?.tokens?.access_token || accessToken;
+
+    if (Array.isArray(data?.data)) {
+      for (const entry of data.data) {
+        const node = entry?.node || {};
+        const status = node.my_list_status || {};
+        collected.push({
+          id: node.id,
+          title: node.title || 'Untitled',
+          status: status.status || 'unknown',
+          watchedEpisodes: typeof status.num_episodes_watched === 'number' ? status.num_episodes_watched : null,
+          totalEpisodes: typeof node.num_episodes === 'number' ? node.num_episodes : null,
+          score: typeof status.score === 'number' && status.score > 0 ? status.score : null,
+          updatedAt: status.updated_at || null
+        });
+        if (collected.length >= maxItems) break;
+      }
+    }
+
+    pagesFetched += 1;
+    nextUrl = data?.paging?.next || null;
+    if (!nextUrl || collected.length >= maxItems) break;
+    await sleep(350);
+  }
+
+  return collected;
 }

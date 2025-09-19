@@ -11,6 +11,7 @@ export default defineConfig({
       '/logout': 'http://localhost:3000',
       '/preview-shows': 'http://localhost:3000',
       '/add-shows': 'http://localhost:3000',
+      '/my-list': 'http://localhost:3000',
       '/rmtj.jpg': 'http://localhost:3000'
     }
   }
