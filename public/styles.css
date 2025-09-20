@@ -24,8 +24,31 @@ body {
     radial-gradient(1000px 600px at -10% 30%, rgba(125,211,252,0.06), transparent 60%),
     radial-gradient(1200px 800px at 30% 110%, rgba(79,156,255,0.08), transparent 60%),
     radial-gradient(1000px 600px at 110% 70%, rgba(125,211,252,0.06), transparent 60%),
+    radial-gradient(1200px 800px at 30% -10%, rgba(79,156,255,0.08), transparent 60%),
+    radial-gradient(1000px 600px at 110% 30%, rgba(125,211,252,0.06), transparent 60%),
+    radial-gradient(1200px 800px at 70% 110%, rgba(79,156,255,0.08), transparent 60%),
+    radial-gradient(1000px 600px at -10% 70%, rgba(125,211,252,0.06), transparent 60%),
     var(--bg);
-  background-size: 100% 200vh;
+  background-size:
+    100% 200vh,
+    100% 200vh,
+    100% 200vh,
+    100% 200vh,
+    100% 200vh,
+    100% 200vh,
+    100% 200vh,
+    100% 200vh,
+    auto;
+  background-position:
+    center 0,
+    center 0,
+    center 0,
+    center 0,
+    center 200vh,
+    center 200vh,
+    center 200vh,
+    center 200vh,
+    center 0;
   background-repeat: repeat-y;
   color: var(--text);
   font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
