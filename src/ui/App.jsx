@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import packageJson from '../../package.json'
 
 function useIsHttpOrigin() {
   return useMemo(() => typeof location !== 'undefined' && location.protocol.startsWith('http'), [])
@@ -6,6 +7,7 @@ function useIsHttpOrigin() {
 
 export default function App() {
   const isHttp = useIsHttpOrigin()
+  const hasBrowserApis = typeof window !== 'undefined' && typeof document !== 'undefined'
   const [showsText, setShowsText] = useState('')
   const [previewResults, setPreviewResults] = useState([])
   const [finalResults, setFinalResults] = useState([])
@@ -14,9 +16,11 @@ export default function App() {
   const [listLoading, setListLoading] = useState(false)
   const [listLoaded, setListLoaded] = useState(false)
   const [listError, setListError] = useState('')
+  const [exportLoading, setExportLoading] = useState(false)
   const [me, setMe] = useState({ loading: true, loggedIn: false, name: '' })
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
   const [activeTab, setActiveTab] = useState('home')
+  const version = packageJson?.version || 'dev'
 
   const onLogin = () => {
     const w = 520, h = 640
@@ -146,6 +150,51 @@ export default function App() {
       showToast(message, 'error')
     } finally {
       setListLoading(false)
+    }
+  }
+
+  const onExport = async () => {
+    if (!me.loggedIn) {
+      showToast('Log in with MAL to export your list', 'error')
+      return
+    }
+    if (!isHttp) {
+      showToast('Open the app via http://localhost:3000/ to export your list', 'error')
+      return
+    }
+    if (!hasBrowserApis) {
+      console.warn('Export attempted without browser APIs')
+      showToast('Export is only available in the browser', 'error')
+      return
+    }
+    setExportLoading(true)
+    try {
+      const res = await fetch('/my-list', { credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const message = data?.error || 'Failed to export MAL list'
+        showToast(message, 'error')
+        return
+      }
+      const items = Array.isArray(data.results) ? data.results : []
+      const dateStamp = new Date().toISOString().split('T')[0]
+      const filename = 'mal-list-' + dateStamp + '.json'
+      const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' })
+      const urlApi = window.URL || URL
+      const link = document.createElement('a')
+      const objectUrl = urlApi.createObjectURL(blob)
+      link.href = objectUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      setTimeout(() => urlApi.revokeObjectURL(objectUrl), 1000)
+      showToast('Exported list as JSON')
+    } catch (err) {
+      console.error('Export failed:', err)
+      showToast('Unexpected error while exporting list', 'error')
+    } finally {
+      setExportLoading(false)
     }
   }
 
@@ -409,6 +458,29 @@ Naruto`}</pre>
     </div>
   )
 
+  const renderExportPage = () => (
+    <div className="card">
+      <h3>Export MAL List</h3>
+      <p>Download a JSON snapshot of your current anime list for safekeeping or sharing.</p>
+      {!me.loggedIn ? (
+        <div className="muted">Log in with MAL to export your personal list.</div>
+      ) : (
+        <>
+          <div className="help" style={{ marginBottom: 16 }}>
+            We'll fetch the latest data directly from MyAnimeList when you export.
+          </div>
+          <button
+            className="btn"
+            onClick={onExport}
+            disabled={exportLoading || listLoading}
+          >
+            {exportLoading ? 'Preparing export...' : 'Download JSON'}
+          </button>
+        </>
+      )}
+    </div>
+  )
+
   return (
     <>
       <img className="side-illustration" src="/rmtj.jpg" alt="" />
@@ -470,6 +542,12 @@ Naruto`}</pre>
           >
             List
           </button>
+          <button 
+            className={`nav-tab ${activeTab === 'export' ? 'active' : ''}`}
+            onClick={() => setActiveTab('export')}
+          >
+            Export
+          </button>
         </nav>
 
         <div className="page-content">
@@ -477,9 +555,10 @@ Naruto`}</pre>
           {activeTab === 'about' && renderAboutPage()}
           {activeTab === 'usage' && renderUsagePage()}
           {activeTab === 'list' && renderListPage()}
+          {activeTab === 'export' && renderExportPage()}
         </div>
 
-        <div className="footer">rmtj mal-adder • V.1.0.0 • MIT License</div>
+        <div className="footer">rmtj mal-adder • v{version} • MIT License</div>
       </div>
       
       {toast.show && (
