@@ -325,11 +325,15 @@ app.post("/add-shows", async (req, res) => {
 
             const applyUpdate = async (tokenOverride) => {
                 const tokenToUse = tokenOverride || accessToken;
+                const payload = new URLSearchParams({
+                    status: item.plannedStatus,
+                    num_watched_episodes: String(typeof item.plannedEpisodes === 'number' ? item.plannedEpisodes : 0)
+                });
+                if (item.plannedScore !== null && item.plannedScore !== undefined) {
+                    payload.set('score', String(item.plannedScore));
+                }
                 await axios.patch(`${API_BASE}/anime/${item.animeId}/my_list_status`,
-                    new URLSearchParams({
-                        status: item.plannedStatus,
-                        num_watched_episodes: item.plannedEpisodes
-                    }),
+                    payload,
                     {
                         headers: {
                             Authorization: `Bearer ${tokenToUse}`,
@@ -342,6 +346,7 @@ app.post("/add-shows", async (req, res) => {
                     title: item.matchedTitle || item.inputTitle || item.rawInput,
                     status: item.plannedStatus,
                     episodes: item.plannedEpisodes,
+                    score: item.plannedScore !== undefined && item.plannedScore !== null ? item.plannedScore : null,
                     total: item.totalEpisodes || null
                 };
             };
@@ -398,10 +403,25 @@ app.listen(3000, () => console.log("Server running at http://localhost:3000"));
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function parseShowInput(raw) {
-  const episodeMatch = raw.match(/^(.+?)\s*\((\d+)\)\s*$/);
-  const title = episodeMatch ? episodeMatch[1].trim() : raw.trim();
+  let working = raw.trim();
+  let score = null;
+  let scoreError = null;
+
+  const ratingMatch = working.match(/\[(\d{1,2})\]\s*$/);
+  if (ratingMatch) {
+    const candidate = parseInt(ratingMatch[1], 10);
+    if (!Number.isNaN(candidate) && candidate >= 1 && candidate <= 10) {
+      score = candidate;
+    } else {
+      scoreError = 'Score must be between 1 and 10';
+    }
+    working = working.slice(0, ratingMatch.index).trim();
+  }
+
+  const episodeMatch = working.match(/^(.+?)\s*\((\d+)\)\s*$/);
+  const title = episodeMatch ? episodeMatch[1].trim() : working.trim();
   const episodeCount = episodeMatch ? parseInt(episodeMatch[2], 10) : null;
-  return { rawInput: raw, title, episodeCount };
+  return { rawInput: raw, title, episodeCount, score, scoreError };
 }
 
 async function fetchAnimeMatch(title, accessToken) {
@@ -458,6 +478,10 @@ async function buildPreviewSet(shows, initialToken, req) {
   const preview = [];
   for (const raw of shows) {
     const parsed = parseShowInput(raw);
+    if (parsed.scoreError) {
+      preview.push({ rawInput: raw, inputTitle: parsed.title || raw, episodeCount: parsed.episodeCount, error: parsed.scoreError });
+      continue;
+    }
     if (!parsed.title) {
       preview.push({ rawInput: raw, inputTitle: raw, error: 'Title is empty' });
       continue;
@@ -476,6 +500,7 @@ async function buildPreviewSet(shows, initialToken, req) {
         animeId: anime.id,
         totalEpisodes,
         plannedEpisodes: watchedEpisodes,
+        plannedScore: parsed.score,
         plannedStatus: status
       };
     };

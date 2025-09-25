@@ -310,7 +310,7 @@ export default function App() {
       <div className="row">
         <div className="card">
           <h3>Paste shows</h3>
-          <div className="help">One title per line. Use format: "Anime Name (episodes)" for specific episode counts.</div>
+          <div className="help">One title per line. Use "(episodes)" for progress and "[score]" (1-10) to set ratings, e.g. "Anime Name (12) [8]".</div>
           <div className="field" style={{ marginTop: 10 }}>
             <label htmlFor="shows">Shows</label>
             <textarea id="shows" value={showsText} onChange={e => setShowsText(e.target.value)} />
@@ -365,7 +365,7 @@ export default function App() {
       <ul>
         <li> Secure OAuth2 authentication with MyAnimeList</li>
         <li> Paste multiple anime titles at once</li>
-        <li> Specify episode counts for each show</li>
+        <li> Specify episode counts and ratings for each show</li>
         <li> Modern, responsive UI</li>
         <li> Fast bulk updates to your MAL list</li>
       </ul>
@@ -388,7 +388,7 @@ export default function App() {
       <p>Click "Login with MAL" to authenticate with your MyAnimeList account. This opens a secure popup window.</p>
       
       <h4>2. Adding Shows</h4>
-      <p>Paste anime titles in the text area, one per line. You can specify episode counts using these formats:</p>
+      <p>Paste anime titles in the text area, one per line. You can specify episode counts and ratings using these formats:</p>
       
       <div className="code-examples">
         <h5>Basic Format (marks as completed):</h5>
@@ -401,11 +401,19 @@ One Piece`}</pre>
 Demon Slayer (26)
 One Piece (1000)`}</pre>
         
+        <h5>With Rating:</h5>
+        <pre className="code-block">{`Attack on Titan [9]
+Demon Slayer [8]
+One Piece (1000) [10]`}</pre>
+        
         <h5>Mixed Format:</h5>
-        <pre className="code-block">{`Attack on Titan (25)
+        <pre className="code-block">{`Attack on Titan (25) [9]
 Demon Slayer
-One Piece (1000)
-Naruto`}</pre>
+One Piece (1000) [10]
+Naruto [7]`}</pre>
+      </div>
+      <div className="help" style={{ marginTop: 12 }}>
+        Ratings use MAL's 1-10 scale. Skip "[score]" to leave your rating unchanged.
       </div>
 
       <h4>3. Processing</h4>
@@ -413,7 +421,7 @@ Naruto`}</pre>
       <ol>
         <li>Search MyAnimeList for each anime title</li>
         <li>Find the best match</li>
-        <li>Update your list with the specified episode count</li>
+        <li>Update your list with the specified episode count and score (if provided)</li>
         <li>Mark as "completed" if no episode count is specified</li>
         <li>Show results in the right panel</li>
       </ol>
@@ -591,6 +599,9 @@ function PreviewList({ items }) {
                   {item.plannedEpisodes !== null && (
                     <span>{item.plannedEpisodes}{item.totalEpisodes ? ` / ${item.totalEpisodes}` : ''} eps</span>
                   )}
+                  {typeof item.plannedScore === 'number' && item.plannedScore > 0 && (
+                    <span>Score: {item.plannedScore}</span>
+                  )}
                 </div>
               </li>
             ))}
@@ -632,6 +643,9 @@ function ResultsList({ items }) {
               <span className="badge">{item.status}</span>
               {item.episodes !== null && item.status !== 'error' && (
                 <span>{item.episodes}{item.total ? ` / ${item.total}` : ''} eps</span>
+              )}
+              {item.status !== 'error' && typeof item.score === 'number' && item.score > 0 && (
+                <span>Score: {item.score}</span>
               )}
             </div>
           </li>
