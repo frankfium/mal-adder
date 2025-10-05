@@ -1,4 +1,4 @@
-#production site
+# Production Site
 https://mal-adder.vercel.app
 # MAL List Updater
 A modern web app to bulk add anime shows to your MyAnimeList account.
